@@ -1,0 +1,144 @@
+#!/bin/bash
+
+# ==============================================================================
+# Script Name: pomo.sh
+# Description: Starts a 'pluck'-based Pomodoro Timer (network block).
+# Usage:
+#   1. Default 25 minutes: ./pomo.sh
+#   2. Custom duration:    /pomo.sh <DURATION>m (e.g., ./pomo.sh 45m)
+# ==============================================================================
+
+# --- Configuration ---
+PLUCK_CMD="pluck"
+DEFAULT_DURATION=25 # Default Pomodoro duration
+MIN_DURATION=1      # Explicit minimum session duration in minutes
+MAX_DURATION=240
+PLUCK_COOLDOWN=1.0  # Default delay between pluck commands (Updated to 1.0 second)
+
+# --- Function Definitions ---
+
+# Check if 'pluck' command exists
+check_pluck() {
+    if ! command -v "$PLUCK_CMD" &> /dev/null
+    then
+        echo "Error: 'pluck' command not found." >&2
+        exit 1
+    fi
+}
+
+# Check if a Pomodoro session is already running and calculate remaining time
+check_active_pomo() {
+    PLUCK_OUTPUT=$( "$PLUCK_CMD" export 2>/dev/null )
+    
+    # Check if 'allow everything' line is missing, indicating an active Pomodoro session.
+    if ! echo "$PLUCK_OUTPUT" | grep -x -q "allow everything"; then
+        
+        # Session is active. Find the line with the pending 'allow everything' rule.
+        TIMESTAMP_LINE=$(echo "$PLUCK_OUTPUT" | grep -E '^#.* \+ allow everything$')
+        
+        if [ -z "$TIMESTAMP_LINE" ]; then
+            echo "Error: Pomodoro active, but end time is unknown. Cannot start new session." >&2
+            exit 1
+        fi
+        
+        # Extract the date and time
+        END_TIME_STR=$(echo "$TIMESTAMP_LINE" | awk '{print $2, $3}')
+        
+        # Convert times to epoch seconds
+        END_EPOCH=$(date -d "$END_TIME_STR" +%s 2>/dev/null)
+        NOW_EPOCH=$(date +%s)
+        
+        if [ $? -ne 0 ] || [ -z "$END_EPOCH" ]; then
+             echo "Error: Failed to parse end time timestamp: $END_TIME_STR" >&2
+             exit 1
+        fi
+        
+        REMAINING_SECONDS=$((END_EPOCH - NOW_EPOCH))
+        
+        if (( REMAINING_SECONDS <= 0 )); then
+            echo "Warning: Active Pomodoro time expired. Try again in a moment." >&2
+            exit 1
+        fi
+
+        # Convert to minutes, rounded up (ceiling function)
+        REMAINING_MINUTES=$(((REMAINING_SECONDS + 59) / 60))
+        
+        echo "Error: Pomodoro active. Ends in ${REMAINING_MINUTES}m." >&2
+        echo "       Cannot start new session." >&2
+        exit 1
+    fi
+}
+
+# Display usage instructions (kept brief)
+show_usage() {
+    echo "Usage: $0 [<DURATION>m]"
+    echo "  Min: $MIN_DURATION minute."
+    echo "  Default: $DEFAULT_DURATION minutes."
+    echo "  Max: $MAX_DURATION minutes."
+}
+
+# --- Main Logic ---
+
+check_pluck
+check_active_pomo
+
+# 1. Parse Input Argument
+DURATION_STR=""
+if [ -z "$1" ]; then
+    DURATION_MINUTES=$DEFAULT_DURATION
+    DURATION_STR="${DEFAULT_DURATION}m"
+elif [[ "$1" =~ ^([0-9]+)m$ ]]; then
+    DURATION_MINUTES=${BASH_REMATCH[1]}
+    DURATION_STR="$1"
+else
+    echo "Error: Invalid argument format." >&2
+    show_usage
+    exit 1
+fi
+
+# 2. Check duration limits
+if (( DURATION_MINUTES < MIN_DURATION )); then
+    echo "Error: Duration must be at least ${MIN_DURATION} minute." >&2
+    exit 1
+elif (( DURATION_MINUTES > MAX_DURATION )); then
+    echo "Error: Duration cannot exceed $MAX_DURATION minutes." >&2
+    exit 1
+fi
+
+# 3. Execution Confirmation (Kept brief)
+echo "🍅 Start $DURATION_MINUTES minute Pomodoro? (y/N)"
+read -r -p "Confirm: " CONFIRMATION
+
+if [[ "$CONFIRMATION" != "y" && "$CONFIRMATION" != "Y" ]]; then
+    echo "Cancelled."
+    exit 0
+fi
+
+echo "--- Starting sequence ---"
+
+# Command 1: Block network
+echo "1/4. Blocking network..."
+"$PLUCK_CMD" - allow everything
+if [ $? -ne 0 ]; then echo "Warning: Command 1 failed."; fi
+sleep 2.0 # Wait 2.0 seconds after the critical blocking command.
+
+# Command 2: Set Pomodoro duration delay
+echo "2/4. Setting session delay to $DURATION_STR..."
+"$PLUCK_CMD" delay "$DURATION_STR"
+if [ $? -ne 0 ]; then echo "Error: Command 2 failed, aborting."; exit 1; fi
+sleep "$PLUCK_COOLDOWN" 
+
+# Command 3: Restore default delay (using 'pluck delay 0')
+echo "3/4. Setting default delay back to 0..."
+"$PLUCK_CMD" delay 0
+if [ $? -ne 0 ]; then echo "Error: Command 3 failed, aborting."; exit 1; fi
+sleep "$PLUCK_COOLDOWN"
+
+# Command 4: Action after Pomodoro (Allow all network)
+echo "4/4. Scheduling allow all after session..."
+"$PLUCK_CMD" allow everything
+if [ $? -ne 0 ]; then echo "Error: Command 4 failed, aborting."; exit 1; fi
+
+echo ""
+echo "✅ Pomodoro started: $DURATION_MINUTES minutes focus."
+echo "   Network will be allowed after $DURATION_MINUTES minutes."
