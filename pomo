@@ -13,7 +13,7 @@ PLUCK_CMD="pluck"
 DEFAULT_DURATION=25 # Default Pomodoro duration
 MIN_DURATION=1      # Explicit minimum session duration in minutes
 MAX_DURATION=240
-PLUCK_COOLDOWN=1.0 # Default delay between pluck commands (Updated to 1.0 second)
+PLUCK_COOLDOWN=1.0 # Default delay between pluck commands
 
 # --- Function Definitions ---
 
@@ -113,7 +113,8 @@ if [[ "$CONFIRMATION" != "y" && "$CONFIRMATION" != "Y" ]]; then
   exit 0
 fi
 
-echo "--- Starting sequence ---"
+echo ""
+echo "[actions]"
 
 # Command 1: Block network
 echo "1/4. Blocking network..."
@@ -146,8 +147,12 @@ if [ $? -ne 0 ]; then
   echo "Error: Command 4 failed, aborting."
   exit 1
 fi
+sleep "$PLUCK_COOLDOWN" # Cooldown after the last pluck command
 
 echo ""
-echo "🍅 Pomodoro started: $DURATION_MINUTES minutes focus."
-echo "   Network will be allowed after $DURATION_MINUTES minutes."
+echo "[pending]"
+"$PLUCK_CMD" future # Execute pluck future to confirm configuration
 
+echo ""
+echo "💥 Pomodoro started: $DURATION_MINUTES minutes focus."
+echo "   Network will be allowed after $DURATION_MINUTES minutes."
