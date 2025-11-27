@@ -9,11 +9,13 @@
 # ==============================================================================
 
 # --- Configuration ---
+
 PLUCK_CMD="pluck"
 DEFAULT_DURATION=25 # Default Pomodoro duration
-MIN_DURATION=1      # Explicit minimum session duration in minutes
-MAX_DURATION=240
-PLUCK_COOLDOWN=1.0 # Default delay between pluck commands
+RESTORE_DELAY=10    # Default delay to be restored after the Pomodoro in seconds
+MIN_DURATION=5      # Explicit minimum session duration in minutes
+MAX_DURATION=240    # Explicit maximum session duration in minutes
+PLUCK_COOLDOWN=2.0  # Delay between pluck commands
 
 # --- Function Definitions ---
 
@@ -62,8 +64,8 @@ check_active_pomo() {
     # Convert to minutes, rounded up (ceiling function)
     REMAINING_MINUTES=$(((REMAINING_SECONDS + 59) / 60))
 
-    echo "Error: Pomodoro active. Ends in ${REMAINING_MINUTES}m." >&2
-    echo "       Cannot start new session." >&2
+    echo "Pomodoro active. Ends in ${REMAINING_MINUTES}m." >&2
+    echo "Cannot start new session." >&2
     exit 1
   fi
 }
@@ -97,7 +99,7 @@ fi
 
 # 2. Check duration limits
 if ((DURATION_MINUTES < MIN_DURATION)); then
-  echo "Error: Duration must be at least ${MIN_DURATION} minute." >&2
+  echo "Error: Duration must be at least ${MIN_DURATION} minutes." >&2
   exit 1
 elif ((DURATION_MINUTES > MAX_DURATION)); then
   echo "Error: Duration cannot exceed $MAX_DURATION minutes." >&2
@@ -105,7 +107,7 @@ elif ((DURATION_MINUTES > MAX_DURATION)); then
 fi
 
 # 3. Execution Confirmation (Kept brief)
-echo "🍅 Start $DURATION_MINUTES minute Pomodoro? (y/N)"
+echo "Start $DURATION_MINUTES minutes Pomodoro? (y/N)"
 read -r -p "Confirm: " CONFIRMATION
 
 if [[ "$CONFIRMATION" != "y" && "$CONFIRMATION" != "Y" ]]; then
@@ -120,7 +122,7 @@ echo "[actions]"
 echo "1/4. Blocking network..."
 "$PLUCK_CMD" - allow everything
 if [ $? -ne 0 ]; then echo "Warning: Command 1 failed."; fi
-sleep 2.0 # Wait 2.0 seconds after the critical blocking command.
+sleep "$PLUCK_COOLDOWN"
 
 # Command 2: Set Pomodoro duration delay
 echo "2/4. Setting session delay to $DURATION_STR..."
@@ -131,9 +133,9 @@ if [ $? -ne 0 ]; then
 fi
 sleep "$PLUCK_COOLDOWN"
 
-# Command 3: Restore default delay (using 'pluck delay 0')
-echo "3/4. Setting default delay back to 0..."
-"$PLUCK_CMD" delay 0
+# Command 3: Restore default delay (using pluck delay $RESTORE_DELAY)
+echo "3/4. Setting default delay back to ${RESTORE_DELAY}..."
+"$PLUCK_CMD" delay "$RESTORE_DELAY"
 if [ $? -ne 0 ]; then
   echo "Error: Command 3 failed, aborting."
   exit 1
@@ -154,5 +156,5 @@ echo "[pending]"
 "$PLUCK_CMD" future # Execute pluck future to confirm configuration
 
 echo ""
-echo "💥 Pomodoro started: $DURATION_MINUTES minutes focus."
-echo "   Network will be allowed after $DURATION_MINUTES minutes."
+echo "Pomodoro started: $DURATION_MINUTES minutes focus."
+echo "Network will be allowed after $DURATION_MINUTES minutes."
